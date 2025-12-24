@@ -1,0 +1,8 @@
+{
+  "name": "Grid Chronicles: Storyboard Visualizer",
+  "description": "A high-end storyboard visualization tool for the manga 'Grid Chronicles: The Verdant Seventh Day', featuring AI-powered frame generation to bring cyber-manga concepts to life.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
