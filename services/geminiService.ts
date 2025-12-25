@@ -7,6 +7,11 @@ export interface VideoResult {
   asset: any;
 }
 
+export interface IngestedStory {
+  lore: Lore;
+  episodes: Episode[];
+}
+
 export class GeminiService {
   constructor() {}
 
@@ -14,16 +19,17 @@ export class GeminiService {
     return new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
   }
 
-  async refineText(field: string, currentText: string, context?: string): Promise<string> {
+  async refineText(field: string, currentText: string, feedback: string, context?: string): Promise<string> {
     try {
       const ai = this.getClient();
       const prompt = `You are a world-class creative writer for a cyberpunk manga called "Grid Chronicles".
-      Refine and expand the following ${field}. 
+      Update the following ${field} based on the user's improvement suggestions.
       Current Text: "${currentText}"
+      User Feedback: "${feedback}"
       ${context ? `Context about the world: ${context}` : ''}
       
       Requirements:
-      - Keep it professional, evocative, and technical (cyberpunk feel).
+      - Integrate the feedback naturally into the cyber-manga style.
       - Maintain the "Verdant vs Azure" conflict themes.
       - Return ONLY the refined text, no preamble.`;
 
@@ -37,6 +43,107 @@ export class GeminiService {
       console.error("Refine text failed:", error);
       return currentText;
     }
+  }
+
+  async refineChapter(chapter: Episode, feedback: string, lore: Lore): Promise<{title: string, summary: string}> {
+    try {
+      const ai = this.getClient();
+      const prompt = `Refine the title and plot summary of this manga chapter based on feedback.
+      Current Title: ${chapter.title}
+      Current Plot: ${chapter.summary}
+      World Background: ${lore.background}
+      User Feedback: ${feedback}
+      
+      Return as JSON with "title" and "summary" keys.`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              title: { type: Type.STRING },
+              summary: { type: Type.STRING }
+            },
+            required: ["title", "summary"]
+          }
+        }
+      });
+      return JSON.parse(response.text || '{}');
+    } catch (error) {
+      console.error("Refine chapter failed:", error);
+      return { title: chapter.title, summary: chapter.summary };
+    }
+  }
+
+  async bulkRefine(currentLore: Lore, currentEpisodes: Episode[], feedback: string): Promise<IngestedStory> {
+    const ai = this.getClient();
+    const prompt = `Completely overhaul and refine the entire story structure of "Grid Chronicles" based on the following user feedback.
+    
+    USER FEEDBACK: "${feedback}"
+    
+    CURRENT WORLD: ${currentLore.background}
+    CURRENT CHAPTERS: ${currentEpisodes.map(e => e.title).join(", ")}
+    
+    Requirements:
+    - Regenerate the World Background, Characters, and all Chapters.
+    - Each chapter must have exactly 8 detailed scenes.
+    - Ensure a tight narrative arc across all chapters.`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-pro-preview',
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            lore: {
+              type: Type.OBJECT,
+              properties: {
+                background: { type: Type.STRING },
+                characters: { type: Type.STRING },
+                rules: { type: Type.STRING }
+              },
+              required: ["background", "characters", "rules"]
+            },
+            episodes: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  id: { type: Type.INTEGER },
+                  title: { type: Type.STRING },
+                  summary: { type: Type.STRING },
+                  scenes: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        id: { type: Type.INTEGER },
+                        title: { type: Type.STRING },
+                        visual: { type: Type.STRING },
+                        description: { type: Type.STRING },
+                        narrative: { type: Type.STRING },
+                        dialogue: { type: Type.STRING },
+                        ui_sfx: { type: Type.STRING }
+                      },
+                      required: ["id", "title", "visual", "description", "narrative", "dialogue", "ui_sfx"]
+                    }
+                  }
+                },
+                required: ["id", "title", "summary", "scenes"]
+              }
+            }
+          },
+          required: ["lore", "episodes"]
+        }
+      }
+    });
+
+    return JSON.parse(response.text || '{}');
   }
 
   async generateFrame(visual: string, description: string, size: ImageSize = '1K'): Promise<string | null> {
@@ -109,6 +216,78 @@ Color: Neon greens and deep blues. Cinematic lighting.`;
     } catch (e) {
       console.error("Failed to parse script JSON", e);
       return [];
+    }
+  }
+
+  async ingestStoryIntel(fileContent: string): Promise<IngestedStory> {
+    const ai = this.getClient();
+    const prompt = `Analyze this raw story document and extract it into a structured Cyberpunk Manga format for "Grid Chronicles".
+    DOCUMENT CONTENT:
+    ${fileContent}
+
+    Extracted data must strictly follow the "Verdant vs Azure" lore. 
+    Provide:
+    1. A world background.
+    2. Character profiles.
+    3. At least 3 chapters (episodes), each with 8 fully drafted scenes.
+    `;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-pro-preview',
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            lore: {
+              type: Type.OBJECT,
+              properties: {
+                background: { type: Type.STRING },
+                characters: { type: Type.STRING },
+                rules: { type: Type.STRING }
+              },
+              required: ["background", "characters", "rules"]
+            },
+            episodes: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  id: { type: Type.INTEGER },
+                  title: { type: Type.STRING },
+                  summary: { type: Type.STRING },
+                  scenes: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        id: { type: Type.INTEGER },
+                        title: { type: Type.STRING },
+                        visual: { type: Type.STRING },
+                        description: { type: Type.STRING },
+                        narrative: { type: Type.STRING },
+                        dialogue: { type: Type.STRING },
+                        ui_sfx: { type: Type.STRING }
+                      },
+                      required: ["id", "title", "visual", "description", "narrative", "dialogue", "ui_sfx"]
+                    }
+                  }
+                },
+                required: ["id", "title", "summary", "scenes"]
+              }
+            }
+          },
+          required: ["lore", "episodes"]
+        }
+      }
+    });
+
+    try {
+      return JSON.parse(response.text || '{}');
+    } catch (e) {
+      console.error("Failed to parse ingestion JSON", e);
+      throw new Error("Data corruption during neural extraction.");
     }
   }
 
